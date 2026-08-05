@@ -115,7 +115,7 @@ class ReActAgentBusinessTest {
         // The TOOL message must record that it was a failure (not pretend success)
         String toolMsg = lastCallMessages.stream()
                 .filter(m -> m.role() == Memory.Message.Role.TOOL)
-                .map(Memory.Message::content)
+                .map(m -> (String) m.content())
                 .findFirst().orElseThrow();
         assertTrue(toolMsg.contains("false") || toolMsg.toLowerCase().contains("fail")
                         || toolMsg.contains("error") || toolMsg.contains("失败"),
@@ -155,12 +155,15 @@ class ReActAgentBusinessTest {
         List<Memory.Message> lastCallMessages = chatModel.lastCallMessages;
         String toolMsg = lastCallMessages.stream()
                 .filter(m -> m.role() == Memory.Message.Role.TOOL)
-                .map(Memory.Message::content)
+                .map(m -> (String) m.content())
                 .findFirst()
                 .orElseThrow();
         assertTrue(toolMsg.contains("line1"), "tool message must contain original line1: " + toolMsg);
         assertTrue(toolMsg.contains("line2"), "tool message must contain original line2: " + toolMsg);
-        assertTrue(toolMsg.contains("\"quoted\""), "tool message must preserve quoted text: " + toolMsg);
+        // Quotes are JSON-escaped for safe transport; verify the escaped form is intact
+        assertTrue(toolMsg.contains("\\\"" + "quoted" + "\\\""),
+                "tool message must preserve quoted text (JSON-escaped): " + toolMsg);
+        assertTrue(toolMsg.contains("carriage"), "tool message must contain original carriage: " + toolMsg);
     }
 
     // ==================== Max-step result enrichment ====================
