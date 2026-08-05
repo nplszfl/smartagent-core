@@ -117,8 +117,15 @@ public class AgentController {
             toolsUsed.addAll(result.toolsUsed);
             if (result.timedOut) timeout = true;
 
-            // 更新数据库中的消息历史
-            saveMessages(conversation.getId(), messages);
+            // 更新数据库中的消息历史（保存失败不能阻塞聊天响应，但要记录到 metrics）
+            try {
+                saveMessages(conversation.getId(), messages);
+            } catch (Exception saveEx) {
+                log.error("保存消息历史失败（用户答案已返回，但会话历史可能丢失）", saveEx);
+                errorMessage = "保存会话历史失败: " + saveEx.getMessage();
+                success = false;
+                return AgentResponse.success(result.answer);
+            }
 
             success = true;
             return AgentResponse.success(result.answer);
@@ -308,7 +315,9 @@ public class AgentController {
             String messagesJson = objectMapper.writeValueAsString(msgList);
             conversationService.updateMessages(conversationId, messagesJson);
         } catch (Exception e) {
-            log.error("保存消息历史失败", e);
+            // Propagate so chat() can decide how to surface it (e.g. metrics + log)
+            // without silently losing the conversation history.
+            throw new RuntimeException("保存会话历史失败", e);
         }
     }
 
@@ -426,7 +435,11 @@ public class AgentController {
                     calls.add(new ModelResponse.ToolCall(UUID.randomUUID().toString(), toolName, args));
                 }
             } catch (Exception e) {
-                // 忽略解析错误
+                // Parsing failed — surface as warn so silent tool-call drops show up in logs.
+                // The model may have produced a valid tool call we couldn't parse; the chat
+                // response still returns the raw content so the caller is not lied to.
+                log.warn("解析工具调用失败，已忽略本次 Action（model 输出: {}）",
+                        content.length() > 200 ? content.substring(0, 200) + "..." : content, e);
             }
         }
 
